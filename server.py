@@ -157,7 +157,9 @@ def _vibe_required(user: dict[str, Any] | None) -> bool:
     if not user:
         return True
     prefs = user.get("prefs") or {}
-    return not bool(prefs.get("personality"))
+    personality = prefs.get("personality") or {}
+    # Require a real saved label — empty {} must still gate
+    return not bool(personality.get("label"))
 
 
 def _safe_tool_events(events: list) -> list[dict]:
@@ -476,7 +478,9 @@ def _public_user(user: dict | None) -> dict | None:
     if not user:
         return None
     prefs = user.get("prefs") or {}
-    personality = prefs.get("personality")
+    personality = prefs.get("personality") or None
+    if isinstance(personality, dict) and not personality.get("label"):
+        personality = None
     return {
         "name": user.get("name"),
         "email": user.get("email"),
@@ -485,7 +489,7 @@ def _public_user(user: dict | None) -> dict | None:
         "opt_in_match": user.get("opt_in_match", True),
         "prefs": prefs,
         "personality": personality,
-        "vibe_required": not bool(personality),
+        "vibe_required": personality is None,
     }
 
 
@@ -504,6 +508,67 @@ async def app_js() -> FileResponse:
     return FileResponse(WEB_DIR / "app.js", media_type="text/javascript")
 
 
+def _run_vibe_gate(user: dict[str, Any], text: str) -> dict[str, Any]:
+    """Keep first-time guests on the vibe quiz instead of hard-failing chat."""
+    sub = user["sub"]
+    token = context.current_user_sub.set(sub)
+    try:
+        progress = ((user.get("prefs") or {}).get("vibe_progress") or {}).get(
+            "answers"
+        ) or {}
+        # Try to treat free-text as an answer to the current question
+        from cafe_concierge.vibe import next_question
+
+        current_q = next_question(dict(progress))
+        if current_q and text:
+            answered = cafe_tools.answer_vibe_question(current_q["id"], text)
+            if answered.get("status") == "success":
+                return {
+                    "reply": answered.get("message")
+                    or "Vibe noted — keep going with the options below.",
+                    "vibe_required": answered.get("phase") != "complete",
+                    "vibe": answered,
+                    "events": [],
+                    "session_id": None,
+                    "user": _public_user(db.get_user(sub)),
+                }
+
+        started = cafe_tools.start_vibe_check()
+        q = started.get("question") or {}
+        prompt = q.get("prompt") or "Finish your vibe check to unlock the café."
+        opts = q.get("options") or []
+        opt_lines = "\n".join(
+            f"**{o.get('choice_key', '')}.** {o.get('emoji', '')} {o.get('label', '')}".strip()
+            for o in opts
+        )
+        if started.get("phase") == "complete" and started.get("personality"):
+            return {
+                "reply": started.get("message")
+                or f"Personality locked: {started['personality'].get('label')}",
+                "vibe_required": False,
+                "vibe": started,
+                "events": [],
+                "session_id": None,
+                "user": _public_user(db.get_user(sub)),
+            }
+        reply = (
+            f"Pehle vibe check complete karo — then café unlocks.\n\n"
+            f"**Vibe {q.get('index', '?')}/{q.get('total', '?')}** — {prompt}"
+        )
+        if opt_lines:
+            reply += f"\n\n{opt_lines}"
+        return {
+            "reply": reply,
+            "vibe_required": True,
+            "vibe": started,
+            "events": [],
+            "session_id": None,
+            "user": _public_user(db.get_user(sub)),
+        }
+    finally:
+        context.current_user_sub.reset(token)
+
+
 @app.post("/api/chat")
 async def chat(
     body: ChatRequest, cafe_session: str | None = Cookie(default=None)
@@ -514,10 +579,7 @@ async def chat(
         raise HTTPException(status_code=400, detail="Empty message")
 
     if _vibe_required(user):
-        raise HTTPException(
-            status_code=403,
-            detail="Finish your vibe check first — pick an option below to unlock the café.",
-        )
+        return _run_vibe_gate(user, text)
 
     sub = user["sub"]
     name = user.get("name") or "Guest"

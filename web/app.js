@@ -283,13 +283,15 @@ function presentVibeQuestion(question) {
   renderVibeOptions(question);
 }
 
-async function beginMandatoryVibe({ isNew = false } = {}) {
+async function beginMandatoryVibe({ isNew = false, quiet = false } = {}) {
   setVibeLock(true);
   chipsEl.innerHTML = "";
-  const hello = isNew
-    ? "Welcome aboard — new guests start with a quick vibe check (takes ~20 seconds)."
-    : "One more thing — finish your vibe check to unlock the café.";
-  addMessage("assistant", hello);
+  if (!quiet) {
+    const hello = isNew
+      ? "Welcome aboard — new guests start with a quick vibe check (takes ~20 seconds)."
+      : "One more thing — finish your vibe check to unlock the café.";
+    addMessage("assistant", hello);
+  }
 
   try {
     const res = await fetch("/api/vibe/start", { method: "POST" });
@@ -297,19 +299,42 @@ async function beginMandatoryVibe({ isNew = false } = {}) {
     if (!res.ok) throw new Error(data.detail || data.message || "Vibe start failed");
     if (data.phase === "complete" && data.personality) {
       finishVibeOnboarding(data.personality);
-      return;
+      return data;
     }
     if (data.question) presentVibeQuestion(data.question);
+    return data;
   } catch (err) {
-    addMessage("assistant", `Couldn’t start vibe check: ${err.message}`);
+    addMessage(
+      "assistant",
+      `Couldn’t start vibe check: ${err.message}. Tap send once to retry.`
+    );
+    return null;
   }
 }
 
+function applyVibePayload(vibe) {
+  if (!vibe) return;
+  if (vibe.phase === "complete" && vibe.personality) {
+    finishVibeOnboarding(vibe.personality);
+    return;
+  }
+  if (vibe.question) presentVibeQuestion(vibe.question);
+}
+
 async function submitVibeChoice(choice) {
-  if (!currentVibeQuestion || busy) return;
+  if (busy) return;
+  if (!currentVibeQuestion) {
+    await beginMandatoryVibe({ quiet: true });
+    if (!currentVibeQuestion) return;
+  }
   const qid = currentVibeQuestion.id;
-  const label =
-    currentVibeQuestion.options?.find((o) => o.id === choice)?.label || choice;
+  const matched = currentVibeQuestion.options?.find(
+    (o) =>
+      o.id === choice ||
+      o.label.toLowerCase() === String(choice).toLowerCase()
+  );
+  const payload = matched?.id || choice;
+  const label = matched?.label || choice;
 
   busy = true;
   sendBtn.disabled = true;
@@ -322,11 +347,18 @@ async function submitVibeChoice(choice) {
     const res = await fetch("/api/vibe/answer", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question_id: qid, choice }),
+      body: JSON.stringify({ question_id: qid, choice: payload }),
     });
     const data = await res.json();
     thinking.row.remove();
-    if (!res.ok) throw new Error(data.detail || data.message || "Answer failed");
+    if (!res.ok) {
+      const detail = data.detail || data.message || "Answer failed";
+      // Invalid choice — re-show options instead of escalating to chat
+      addMessage("assistant", `${detail}\n\nTap A–D below.`);
+      if (currentVibeQuestion) renderVibeOptions(currentVibeQuestion);
+      else await beginMandatoryVibe({ quiet: true });
+      return;
+    }
 
     if (data.phase === "complete" && data.personality) {
       finishVibeOnboarding(data.personality);
@@ -684,7 +716,6 @@ function consumeSwiggyQuery() {
 }
 
 async function bootstrap() {
-  renderChips();
   const config = await fetch("/api/config").then((r) => r.json());
   if (!config.auth_configured) {
     showGate(
@@ -695,12 +726,14 @@ async function bootstrap() {
 
   const me = await fetch("/api/me").then((r) => r.json());
   if (me.authenticated) {
+    const needsVibe = Boolean(me.vibe_required || me.user?.vibe_required);
+    if (!needsVibe) renderChips();
     showApp(
       { ...me.user, recent_orders: me.recent_orders },
       me.swiggy,
-      { forceVibe: Boolean(me.vibe_required) }
+      { forceVibe: needsVibe }
     );
-    if (!me.vibe_required) consumeSwiggyQuery();
+    if (!needsVibe) consumeSwiggyQuery();
   } else {
     showGate();
   }
@@ -749,8 +782,13 @@ async function sendMessage(text) {
   const trimmed = text.trim();
   if (!trimmed || busy) return;
 
-  // During mandatory vibe: map free-text / A–D to the current question
-  if (vibeRequired && currentVibeQuestion) {
+  // Mandatory vibe: never hit /api/chat until personality is saved
+  if (vibeRequired || currentUser?.vibe_required) {
+    setVibeLock(true);
+    if (!currentVibeQuestion) {
+      await beginMandatoryVibe({ quiet: true });
+      if (!currentVibeQuestion) return;
+    }
     const letter = trimmed.toUpperCase();
     if (letter.length === 1 && "ABCD".includes(letter)) {
       const idx = letter.charCodeAt(0) - 65;
@@ -769,11 +807,8 @@ async function sendMessage(text) {
       await submitVibeChoice(byLabel.id);
       return;
     }
-    addMessage(
-      "assistant",
-      "Tap one of the vibe options below (or reply with A, B, C, or D)."
-    );
-    renderVibeOptions(currentVibeQuestion);
+    // Soft match: pass label text to answer endpoint
+    await submitVibeChoice(trimmed);
     return;
   }
 
@@ -796,18 +831,26 @@ async function sendMessage(text) {
       showGate("Please sign in with Google again.");
       return;
     }
-    if (res.status === 403) {
-      thinking.row.remove();
-      vibeBootstrapped = false;
-      beginMandatoryVibe();
-      return;
-    }
     if (!res.ok) {
       const detail = data.detail || data.error || "Request failed";
       throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
     }
 
     thinking.row.remove();
+
+    // Server may still steer first-timers back into the vibe quiz
+    if (data.vibe_required || data.vibe?.phase === "question") {
+      setVibeLock(true);
+      if (currentUser) currentUser.vibe_required = true;
+      addMessage("assistant", data.reply || "Vibe check pehle.");
+      applyVibePayload(data.vibe);
+      return;
+    }
+    if (data.vibe?.phase === "complete" && data.vibe.personality) {
+      finishVibeOnboarding(data.vibe.personality);
+      return;
+    }
+
     addMessage("assistant", data.reply || "Done.");
     applyToolSideEffects(data.events || []);
   } catch (err) {
