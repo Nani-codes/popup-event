@@ -59,12 +59,40 @@ def init_db() -> None:
               updated_at REAL NOT NULL,
               PRIMARY KEY (user_sub, provider)
             );
+
+            CREATE TABLE IF NOT EXISTS vibe_matches (
+              user_sub TEXT NOT NULL,
+              matched_sub TEXT NOT NULL,
+              shared_json TEXT NOT NULL DEFAULT '[]',
+              score INTEGER DEFAULT 0,
+              notified INTEGER DEFAULT 0,
+              created_at REAL NOT NULL,
+              updated_at REAL NOT NULL,
+              PRIMARY KEY (user_sub, matched_sub),
+              FOREIGN KEY (user_sub) REFERENCES users(sub),
+              FOREIGN KEY (matched_sub) REFERENCES users(sub)
+            );
+
+            CREATE TABLE IF NOT EXISTS match_notifications (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              to_sub TEXT NOT NULL,
+              from_sub TEXT NOT NULL,
+              message TEXT NOT NULL,
+              read INTEGER DEFAULT 0,
+              created_at REAL NOT NULL,
+              FOREIGN KEY (to_sub) REFERENCES users(sub),
+              FOREIGN KEY (from_sub) REFERENCES users(sub)
+            );
             """
         )
 
 
-def upsert_user(*, sub: str, email: str, name: str | None, picture: str | None) -> dict:
+def upsert_user(
+    *, sub: str, email: str, name: str | None, picture: str | None
+) -> tuple[dict, bool]:
+    """Insert or update a guest. Returns (user, created)."""
     now = time.time()
+    created = False
     with _connect() as conn:
         row = conn.execute("SELECT * FROM users WHERE sub = ?", (sub,)).fetchone()
         if row:
@@ -77,6 +105,7 @@ def upsert_user(*, sub: str, email: str, name: str | None, picture: str | None) 
                 (email, name, picture, now, sub),
             )
         else:
+            created = True
             conn.execute(
                 """
                 INSERT INTO users (sub, email, name, picture, interests, prefs, opt_in_match, created_at, last_seen)
@@ -84,7 +113,9 @@ def upsert_user(*, sub: str, email: str, name: str | None, picture: str | None) 
                 """,
                 (sub, email, name, picture, now, now),
             )
-        return get_user(sub)  # type: ignore[return-value]
+    user = get_user(sub)
+    assert user is not None
+    return user, created
 
 
 def get_user(sub: str) -> dict | None:
@@ -320,4 +351,142 @@ def delete_oauth_token(user_sub: str, provider: str) -> None:
         conn.execute(
             "DELETE FROM oauth_tokens WHERE user_sub = ? AND provider = ?",
             (user_sub, provider),
+        )
+
+
+def upsert_vibe_match(
+    *,
+    user_sub: str,
+    matched_sub: str,
+    shared: list[str],
+    score: int,
+) -> None:
+    now = time.time()
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO vibe_matches (
+              user_sub, matched_sub, shared_json, score, notified, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 0, ?, ?)
+            ON CONFLICT(user_sub, matched_sub) DO UPDATE SET
+              shared_json = excluded.shared_json,
+              score = excluded.score,
+              updated_at = excluded.updated_at
+            """,
+            (user_sub, matched_sub, json.dumps(shared), score, now, now),
+        )
+
+
+def list_vibe_matches(user_sub: str, limit: int = 20) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT m.*, u.name, u.email, u.picture, u.interests, u.prefs
+            FROM vibe_matches m
+            JOIN users u ON u.sub = m.matched_sub
+            WHERE m.user_sub = ?
+            ORDER BY m.score DESC, m.updated_at DESC
+            LIMIT ?
+            """,
+            (user_sub, limit),
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        prefs = json.loads(row["prefs"] or "{}")
+        personality = prefs.get("personality") or {}
+        out.append(
+            {
+                "matched_sub": row["matched_sub"],
+                "handle": row["name"] or (row["email"] or "Guest").split("@")[0],
+                "email": row["email"],
+                "picture": row["picture"],
+                "interests": json.loads(row["interests"] or "[]"),
+                "personality": personality.get("label"),
+                "shared": json.loads(row["shared_json"] or "[]"),
+                "score": row["score"],
+                "notified": bool(row["notified"]),
+                "updated_at": row["updated_at"],
+            }
+        )
+    return out
+
+
+def mark_match_notified(user_sub: str, matched_sub: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            """
+            UPDATE vibe_matches SET notified = 1, updated_at = ?
+            WHERE user_sub = ? AND matched_sub = ?
+            """,
+            (time.time(), user_sub, matched_sub),
+        )
+
+
+def create_match_notification(
+    *, to_sub: str, from_sub: str, message: str
+) -> dict[str, Any]:
+    now = time.time()
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO match_notifications (to_sub, from_sub, message, read, created_at)
+            VALUES (?, ?, ?, 0, ?)
+            """,
+            (to_sub, from_sub, message, now),
+        )
+        nid = int(cur.lastrowid)
+    return {
+        "id": nid,
+        "to_sub": to_sub,
+        "from_sub": from_sub,
+        "message": message,
+        "read": False,
+        "created_at": now,
+    }
+
+
+def list_unread_notifications(to_sub: str, limit: int = 10) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT n.*, u.name, u.email, u.picture, u.prefs
+            FROM match_notifications n
+            JOIN users u ON u.sub = n.from_sub
+            WHERE n.to_sub = ? AND n.read = 0
+            ORDER BY n.created_at DESC
+            LIMIT ?
+            """,
+            (to_sub, limit),
+        ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        prefs = json.loads(row["prefs"] or "{}")
+        personality = prefs.get("personality") or {}
+        out.append(
+            {
+                "id": row["id"],
+                "from_sub": row["from_sub"],
+                "from_handle": row["name"]
+                or (row["email"] or "Guest").split("@")[0],
+                "from_picture": row["picture"],
+                "from_personality": personality.get("label"),
+                "message": row["message"],
+                "created_at": row["created_at"],
+            }
+        )
+    return out
+
+
+def mark_notifications_read(to_sub: str, ids: list[int]) -> None:
+    if not ids:
+        return
+    placeholders = ",".join("?" for _ in ids)
+    with _connect() as conn:
+        conn.execute(
+            f"""
+            UPDATE match_notifications
+            SET read = 1
+            WHERE to_sub = ? AND id IN ({placeholders})
+            """,
+            (to_sub, *ids),
         )

@@ -8,7 +8,7 @@ def test_score_answers_plotter_leaning():
         "movie": "inception",
         "weekend": "hackathon",
         "playlist": "lofi",
-        "drink_alter_ego": "pourover",
+        "drink_alter_ego": "filter",
         "party_role": "corner",
     }
     result = score_answers(answers)
@@ -28,7 +28,11 @@ def test_score_answers_plotter_leaning():
 def test_vibe_quiz_persists_personality(tmp_path, monkeypatch):
     monkeypatch.setattr(db, "DB_PATH", tmp_path / "cafe.db")
     db.init_db()
-    db.upsert_user(sub="u1", email="u1@example.com", name="Nani", picture=None)
+    user, created = db.upsert_user(
+        sub="u1", email="u1@example.com", name="Nani", picture=None
+    )
+    assert created is True
+    assert user["email"] == "u1@example.com"
 
     token = context.current_user_sub.set("u1")
     try:

@@ -84,6 +84,7 @@ os.environ.setdefault("GOOGLE_CLOUD_LOCATION", "us-central1")
 
 from cafe_concierge import context, db  # noqa: E402
 from cafe_concierge.agent import root_agent  # noqa: E402
+from cafe_concierge import tools as cafe_tools  # noqa: E402
 from cafe_concierge.swiggy_mcp import (  # noqa: E402
     PROVIDER as SWIGGY_PROVIDER,
     ensure_swiggy_access_token,
@@ -136,6 +137,27 @@ class ChatRequest(BaseModel):
 class ProfileUpdate(BaseModel):
     interests: list[str] | None = None
     opt_in_match: bool | None = None
+
+
+class VibeAnswerRequest(BaseModel):
+    question_id: str = Field(min_length=1, max_length=64)
+    choice: str = Field(min_length=1, max_length=80)
+
+
+class NotifyMatchRequest(BaseModel):
+    matched_sub: str = Field(min_length=1, max_length=128)
+    note: str = Field(default="", max_length=280)
+
+
+class MarkNotificationsRequest(BaseModel):
+    ids: list[int] = Field(default_factory=list)
+
+
+def _vibe_required(user: dict[str, Any] | None) -> bool:
+    if not user:
+        return True
+    prefs = user.get("prefs") or {}
+    return not bool(prefs.get("personality"))
 
 
 def _safe_tool_events(events: list) -> list[dict]:
@@ -242,14 +264,20 @@ async def auth_google(body: GoogleAuthRequest, response: Response) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token issuer")
 
     sub = info["sub"]
-    user = db.upsert_user(
+    user, created = db.upsert_user(
         sub=sub,
         email=info.get("email", ""),
         name=info.get("name"),
         picture=info.get("picture"),
     )
     _set_session_cookie(response, sub)
-    return {"status": "ok", "user": _public_user(user)}
+    public = _public_user(user)
+    return {
+        "status": "ok",
+        "user": public,
+        "is_new": created,
+        "vibe_required": bool(public and public.get("vibe_required")),
+    }
 
 
 @app.get("/api/me")
@@ -258,12 +286,84 @@ async def me(cafe_session: str | None = Cookie(default=None)) -> dict:
     if not user:
         return {"authenticated": False}
     orders = db.list_orders_for_user(user["sub"], limit=5)
+    public = _public_user(user)
     return {
         "authenticated": True,
-        "user": _public_user(user),
+        "user": public,
         "recent_orders": orders,
         "swiggy": swiggy_status(user["sub"]),
+        "vibe_required": bool(public and public.get("vibe_required")),
+        "is_new": False,
     }
+
+
+@app.post("/api/vibe/start")
+async def api_vibe_start(cafe_session: str | None = Cookie(default=None)) -> dict:
+    """Start/resume mandatory vibe quiz (no LLM — direct tool)."""
+    user = _require_user(cafe_session)
+    token = context.current_user_sub.set(user["sub"])
+    try:
+        return cafe_tools.start_vibe_check()
+    finally:
+        context.current_user_sub.reset(token)
+
+
+@app.post("/api/vibe/answer")
+async def api_vibe_answer(
+    body: VibeAnswerRequest, cafe_session: str | None = Cookie(default=None)
+) -> dict:
+    user = _require_user(cafe_session)
+    token = context.current_user_sub.set(user["sub"])
+    try:
+        return cafe_tools.answer_vibe_question(body.question_id, body.choice)
+    finally:
+        context.current_user_sub.reset(token)
+
+
+@app.get("/api/matches")
+async def api_matches(cafe_session: str | None = Cookie(default=None)) -> dict:
+    user = _require_user(cafe_session)
+    if _vibe_required(user):
+        raise HTTPException(status_code=403, detail="Finish vibe check first.")
+    return {
+        "status": "ok",
+        "matches": db.list_vibe_matches(user["sub"]),
+    }
+
+
+@app.post("/api/matches/notify")
+async def api_notify_match(
+    body: NotifyMatchRequest, cafe_session: str | None = Cookie(default=None)
+) -> dict:
+    user = _require_user(cafe_session)
+    if _vibe_required(user):
+        raise HTTPException(status_code=403, detail="Finish vibe check first.")
+    token = context.current_user_sub.set(user["sub"])
+    try:
+        result = cafe_tools.notify_match(body.matched_sub, body.note)
+    finally:
+        context.current_user_sub.reset(token)
+    if result.get("status") != "success":
+        raise HTTPException(status_code=400, detail=result.get("message", "Notify failed"))
+    return result
+
+
+@app.get("/api/notifications")
+async def api_notifications(cafe_session: str | None = Cookie(default=None)) -> dict:
+    user = _require_user(cafe_session)
+    return {
+        "status": "ok",
+        "notifications": db.list_unread_notifications(user["sub"]),
+    }
+
+
+@app.post("/api/notifications/read")
+async def api_notifications_read(
+    body: MarkNotificationsRequest, cafe_session: str | None = Cookie(default=None)
+) -> dict:
+    user = _require_user(cafe_session)
+    db.mark_notifications_read(user["sub"], body.ids)
+    return {"status": "ok"}
 
 
 @app.get("/api/swiggy/status")
@@ -376,6 +476,7 @@ def _public_user(user: dict | None) -> dict | None:
     if not user:
         return None
     prefs = user.get("prefs") or {}
+    personality = prefs.get("personality")
     return {
         "name": user.get("name"),
         "email": user.get("email"),
@@ -383,7 +484,8 @@ def _public_user(user: dict | None) -> dict | None:
         "interests": user.get("interests") or [],
         "opt_in_match": user.get("opt_in_match", True),
         "prefs": prefs,
-        "personality": prefs.get("personality"),
+        "personality": personality,
+        "vibe_required": not bool(personality),
     }
 
 
@@ -410,6 +512,12 @@ async def chat(
     text = body.message.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Empty message")
+
+    if _vibe_required(user):
+        raise HTTPException(
+            status_code=403,
+            detail="Finish your vibe check first — pick an option below to unlock the café.",
+        )
 
     sub = user["sub"]
     name = user.get("name") or "Guest"

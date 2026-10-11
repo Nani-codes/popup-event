@@ -1,4 +1,4 @@
-"""Quirky vibe quiz → café personality for matching & drink tips."""
+"""Quirky Hinglish vibe quiz → café personality for matching & drink tips."""
 
 from __future__ import annotations
 
@@ -8,66 +8,66 @@ from typing import Any
 QUESTIONS: list[dict[str, Any]] = [
     {
         "id": "movie",
-        "prompt": "If your life had a soundtrack movie, which energy wins?",
+        "prompt": "Late-night rewatch, chai in hand — kaunsi movie energy hai tumhari?",
         "options": [
             {
                 "id": "inception",
-                "label": "Inception",
+                "label": "Inception brain-maze",
                 "emoji": "🌀",
                 "tags": ["deep-conversations", "ai", "plot-twists"],
                 "weights": {"plotter": 2, "builder": 1},
             },
             {
-                "id": "amelie",
-                "label": "Amélie",
-                "emoji": "🎬",
-                "tags": ["whimsy", "people-watching", "small-joys"],
+                "id": "ddlj",
+                "label": "DDLJ train-wave romance",
+                "emoji": "🚂",
+                "tags": ["whimsy", "bollywood", "feel-good"],
                 "weights": {"romantic": 2, "host": 1},
             },
             {
-                "id": "budapest",
-                "label": "Grand Budapest",
-                "emoji": "🏨",
-                "tags": ["design", "wit", "pastel-chaos"],
-                "weights": {"aesthete": 2, "host": 1},
+                "id": "3idiots",
+                "label": "3 Idiots jugaad energy",
+                "emoji": "🎒",
+                "tags": ["jugaad", "friends", "startups"],
+                "weights": {"builder": 2, "spark": 1},
             },
             {
-                "id": "spiderverse",
-                "label": "Spider-Verse",
-                "emoji": "🕸️",
-                "tags": ["chaos-energy", "comics", "bold-ideas"],
-                "weights": {"spark": 2, "builder": 1},
+                "id": "rrr",
+                "label": "RRR mass entry",
+                "emoji": "🔥",
+                "tags": ["chaos-energy", "bold-ideas", "hype"],
+                "weights": {"spark": 2, "host": 1},
             },
         ],
     },
     {
         "id": "weekend",
-        "prompt": "Perfect Kondapur weekend — pick your vibe:",
+        "prompt": "Kondapur weekend plan — full scene kya hoga?",
         "options": [
             {
                 "id": "hackathon",
-                "label": "Hackathon blur",
+                "label": "Hackathon + Maggi at 3am",
                 "emoji": "💻",
                 "tags": ["hackathons", "ai", "startups"],
                 "weights": {"builder": 2, "plotter": 1},
             },
             {
+                "id": "biryani",
+                "label": "Biryani run, then chill",
+                "emoji": "🍛",
+                "tags": ["foodie", "hyderabad", "friends"],
+                "weights": {"host": 2, "romantic": 1},
+            },
+            {
                 "id": "bookstore",
-                "label": "Bookstore crawl",
+                "label": "Bookstore + filter coffee",
                 "emoji": "📚",
                 "tags": ["books", "filter-coffee", "quiet-corners"],
                 "weights": {"romantic": 2, "aesthete": 1},
             },
             {
-                "id": "gig",
-                "label": "Live gig / open mic",
-                "emoji": "🎸",
-                "tags": ["music", "nightlife", "friends"],
-                "weights": {"spark": 2, "host": 1},
-            },
-            {
                 "id": "drive",
-                "label": "Long drive + chai",
+                "label": "ORR long drive + chai",
                 "emoji": "🛣️",
                 "tags": ["travel", "chai", "wind-down"],
                 "weights": {"romantic": 1, "plotter": 1, "aesthete": 1},
@@ -76,102 +76,102 @@ QUESTIONS: list[dict[str, Any]] = [
     },
     {
         "id": "playlist",
-        "prompt": "What’s looping in your earbuds right now?",
+        "prompt": "Earbuds on, laptop open — abhi kya baja raha hai?",
         "options": [
             {
                 "id": "lofi",
-                "label": "Lo-fi focus",
+                "label": "Lo-fi / deep work",
                 "emoji": "🎧",
                 "tags": ["deep-work", "coffee", "headphones-on"],
                 "weights": {"plotter": 2, "builder": 1},
             },
             {
-                "id": "indie",
-                "label": "Indie rock",
-                "emoji": "🎸",
-                "tags": ["music", "stories", "city-walks"],
-                "weights": {"spark": 1, "romantic": 1, "aesthete": 1},
+                "id": "arijit",
+                "label": "Arijit / soft Bollywood",
+                "emoji": "🎤",
+                "tags": ["bollywood", "feelings", "chai"],
+                "weights": {"romantic": 2, "host": 1},
             },
             {
-                "id": "classical",
-                "label": "Classical / jazz",
-                "emoji": "🎷",
+                "id": "rahman",
+                "label": "Rahman / classic vibes",
+                "emoji": "🎹",
                 "tags": ["craft", "patience", "filter-coffee"],
                 "weights": {"aesthete": 2, "romantic": 1},
             },
             {
-                "id": "hyperpop",
-                "label": "Chaos hyperpop",
-                "emoji": "⚡",
-                "tags": ["chaos-energy", "parties", "bold-ideas"],
+                "id": "punjabi",
+                "label": "Punjabi / party mix",
+                "emoji": "🕺",
+                "tags": ["chaos-energy", "parties", "friends"],
                 "weights": {"spark": 2, "host": 1},
             },
         ],
     },
     {
         "id": "drink_alter_ego",
-        "prompt": "Your coffee alter ego walks in. Who is it?",
+        "prompt": "Tumhara café alter-ego kaun? Be honest yaar.",
         "options": [
             {
                 "id": "espresso",
-                "label": "Double espresso",
+                "label": "Double espresso, no bakwaas",
                 "emoji": "⚡",
                 "tags": ["espresso", "ship-fast", "direct"],
                 "weights": {"builder": 2, "spark": 1},
             },
             {
-                "id": "pourover",
-                "label": "Slow pour-over",
+                "id": "filter",
+                "label": "South Indian filter coffee",
                 "emoji": "☕",
-                "tags": ["filter-coffee", "craft", "patience"],
+                "tags": ["filter-coffee", "craft", "tradition"],
                 "weights": {"aesthete": 2, "plotter": 1},
             },
             {
-                "id": "iced",
-                "label": "Iced everything",
-                "emoji": "🧊",
-                "tags": ["cold-coffee", "chill", "summer"],
-                "weights": {"spark": 1, "romantic": 1, "host": 1},
+                "id": "cutting",
+                "label": "Cutting chai + gossip",
+                "emoji": "🫖",
+                "tags": ["chai", "people", "adda"],
+                "weights": {"host": 2, "romantic": 1},
             },
             {
-                "id": "matcha",
-                "label": "Matcha diplomat",
-                "emoji": "🍵",
-                "tags": ["matcha", "design", "calm-focus"],
-                "weights": {"aesthete": 1, "host": 2},
+                "id": "cold",
+                "label": "Cold coffee / iced everything",
+                "emoji": "🧊",
+                "tags": ["cold-coffee", "chill", "summer"],
+                "weights": {"spark": 1, "romantic": 1, "aesthete": 1},
             },
         ],
     },
     {
         "id": "party_role",
-        "prompt": "At a Builder Pop-Up mixer, you’re usually…",
+        "prompt": "Builder Pop-Up pe tum usually kaun ho?",
         "options": [
             {
                 "id": "host",
-                "label": "The connector",
+                "label": "Connector — sabko milata hoon",
                 "emoji": "🤝",
                 "tags": ["networking", "introductions", "people"],
                 "weights": {"host": 2, "spark": 1},
             },
             {
                 "id": "corner",
-                "label": "Corner philosopher",
+                "label": "Corner wala deep talk",
                 "emoji": "🧠",
                 "tags": ["deep-conversations", "ideas", "quiet-corners"],
                 "weights": {"plotter": 2, "romantic": 1},
             },
             {
-                "id": "dance",
-                "label": "Dance-floor energy",
-                "emoji": "🪩",
-                "tags": ["music", "parties", "chaos-energy"],
-                "weights": {"spark": 2, "host": 1},
+                "id": "demo",
+                "label": "Demo pe demo — ship karo",
+                "emoji": "🚀",
+                "tags": ["hackathons", "demos", "ai"],
+                "weights": {"builder": 2, "spark": 1},
             },
             {
                 "id": "snacks",
-                "label": "Snack scout",
-                "emoji": "🥐",
-                "tags": ["pastries", "foodie", "sharing"],
+                "label": "Snack scout — samosa first",
+                "emoji": "🥟",
+                "tags": ["foodie", "pastries", "sharing"],
                 "weights": {"host": 1, "aesthete": 1, "romantic": 1},
             },
         ],
@@ -182,56 +182,56 @@ ARCHETYPES: dict[str, dict[str, Any]] = {
     "plotter": {
         "label": "Midnight Plotter",
         "blurb": (
-            "You brew big ideas with a quiet cup. Deep chats, clever twists, "
-            "and a corner table with an outlet — that’s home."
+            "Badi ideas, chhoti baatein, corner table with a plug — yeh tumhara zone hai. "
+            "Deep chats, clever twists, filter coffee optional but recommended."
         ),
-        "drink_hint": "Try a filter coffee or something cozy, not too sweet.",
+        "drink_hint": "Filter coffee lo, ya kuch cozy — zyada meetha mat.",
         "tags": ["deep-conversations", "ai", "filter-coffee"],
     },
     "builder": {
-        "label": "Ship-It Barista",
+        "label": "Jugaad Builder",
         "blurb": (
-            "You’re here to build — demos, PRs, and espresso-level focus. "
-            "Match you with fellow makers who ship before the ice melts."
+            "Demo pe demo, Maggi at 3am, espresso-level focus. "
+            "Tum fellow makers ke saath ship karte ho — ice melt hone se pehle."
         ),
-        "drink_hint": "Double espresso or a strong cold coffee keeps the sprint alive.",
+        "drink_hint": "Double espresso ya strong cold coffee — sprint chalega.",
         "tags": ["hackathons", "startups", "espresso"],
     },
     "romantic": {
-        "label": "Amélie of Kondapur",
+        "label": "Kondapur Softie",
         "blurb": (
-            "You notice the little magic — latte foam hearts, bookstore finds, "
-            "and the person reading alone who might want company."
+            "Chhoti-chhoti khushiyaan notice karte ho — latte art, bookstore finds, "
+            "aur woh person jo akela padh raha hai. Soft Bollywood soul, basically."
         ),
-        "drink_hint": "Something cozy with a pastry — Amélie would approve.",
-        "tags": ["books", "whimsy", "people-watching"],
+        "drink_hint": "Kuch cozy + pastry. DDLJ vibes, no judgment.",
+        "tags": ["books", "bollywood", "feel-good"],
     },
     "aesthete": {
-        "label": "Pour-Over Aesthete",
+        "label": "Filter Coffee Aesthete",
         "blurb": (
-            "Craft over chaos. Clean design, patient pours, and conversations "
-            "that sound like jazz solos."
+            "Craft over chaos. Clean design, patient pours, aur baatein jo jazz solo jaisi "
+            "lage. South Indian filter coffee is your love language."
         ),
-        "drink_hint": "Slow pour-over or matcha — savor the ritual.",
+        "drink_hint": "Filter coffee slow-sip, ya matcha if you're feeling fancy.",
         "tags": ["design", "craft", "filter-coffee"],
     },
     "spark": {
-        "label": "Hyperpop Spark",
+        "label": "Full Mass Spark",
         "blurb": (
-            "High voltage. You’re the plot twist in the room — bold ideas, "
-            "loud playlists, zero boring tables."
+            "High voltage. Room ka plot twist tum ho — bold ideas, loud playlists, "
+            "zero boring tables. RRR entry energy, soft launch optional."
         ),
-        "drink_hint": "Iced everything or a fun seasonal special.",
+        "drink_hint": "Iced everything, ya jo bhi seasonal special chal raha hai.",
         "tags": ["chaos-energy", "music", "bold-ideas"],
     },
     "host": {
-        "label": "Table Host",
+        "label": "Adda Host",
         "blurb": (
-            "You turn strangers into a table. Intros, snacks, and the soft skill "
-            "of making a hackathon feel like a dinner party."
+            "Strangers ko table bana dete ho. Intros, snacks, cutting-chai gossip — "
+            "hackathon ko dinner party feel dilana tumhara soft skill hai."
         ),
-        "drink_hint": "Shareable vibes — latte + a pastry to split.",
-        "tags": ["networking", "people", "pastries"],
+        "drink_hint": "Shareable vibes — latte + pastry to split, ya cutting chai mood.",
+        "tags": ["networking", "people", "chai"],
     },
 }
 
@@ -294,7 +294,6 @@ def score_answers(answers: dict[str, str]) -> dict[str, Any]:
         arch_key = max(weights.items(), key=lambda kv: (kv[1], kv[0]))[0]
 
     arch = ARCHETYPES[arch_key]
-    # Dedupe tags, keep order, fold archetype tags first
     seen: set[str] = set()
     ordered_tags: list[str] = []
     for t in list(arch.get("tags") or []) + tags:

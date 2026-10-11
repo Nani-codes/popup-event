@@ -10,6 +10,7 @@ const chipsEl = document.getElementById("chips");
 const ticketEl = document.getElementById("ticket");
 const pulseEl = document.getElementById("pulse");
 const vibeCardEl = document.getElementById("vibeCard");
+const vibeBanner = document.getElementById("vibeBanner");
 const sidePanel = document.getElementById("sidePanel");
 const userChip = document.getElementById("userChip");
 const userPic = document.getElementById("userPic");
@@ -25,17 +26,26 @@ const sheetScrim = document.getElementById("sheetScrim");
 const sideSheet = document.getElementById("sideSheet");
 const sheetBody = document.getElementById("sheetBody");
 const sheetClose = document.getElementById("sheetClose");
+const matchesListEl = document.getElementById("matchesList");
+const matchToast = document.getElementById("matchToast");
+const matchToastMsg = document.getElementById("matchToastMsg");
+const matchToastDismiss = document.getElementById("matchToastDismiss");
 
 const SUGGESTIONS = [
-  "Let’s do my vibe check",
   "Something cozy, not too sweet",
   "Who matches my vibe?",
+  "Show my matches",
   "How’s the room looking?",
 ];
 
 let busy = false;
 let currentUser = null;
 let hasTicket = false;
+let vibeRequired = false;
+let currentVibeQuestion = null;
+let vibeBootstrapped = false;
+let notifyPollTimer = null;
+let shownNotificationIds = new Set();
 
 function autoGrow() {
   input.style.height = "auto";
@@ -221,8 +231,28 @@ function updatePersonality(personality) {
   refreshSheetBody();
 }
 
+function setVibeLock(locked) {
+  vibeRequired = locked;
+  document.body.classList.toggle("vibe-locked", locked);
+  if (vibeBanner) vibeBanner.hidden = !locked;
+  if (locked) {
+    input.placeholder = "Tap an option below — or type A, B, C, or D";
+    if (document.querySelector(".fineprint")) {
+      document.querySelector(".fineprint").textContent =
+        "Vibe check first · then order, pulse, and matches unlock";
+    }
+  } else {
+    input.placeholder = "Craving, room pulse, or who to meet…";
+    if (document.querySelector(".fineprint")) {
+      document.querySelector(".fineprint").textContent =
+        "Demo tickets · confirm real pricing at the counter";
+    }
+  }
+}
+
 function renderVibeOptions(question) {
   if (!question?.options?.length || !chipsEl) return;
+  currentVibeQuestion = question;
   chipsEl.innerHTML = "";
   chipsEl.setAttribute("aria-label", question.prompt || "Vibe options");
   for (const opt of question.options) {
@@ -231,13 +261,230 @@ function renderVibeOptions(question) {
     btn.className = "chip vibe-option";
     const key = opt.choice_key || "";
     btn.textContent = `${opt.emoji || ""} ${key ? `${key}. ` : ""}${opt.label}`.trim();
-    const payload = `${opt.label}`;
     btn.addEventListener("click", () => {
-      input.value = payload;
-      autoGrow();
-      composer.requestSubmit();
+      submitVibeChoice(opt.id);
     });
     chipsEl.appendChild(btn);
+  }
+}
+
+function presentVibeQuestion(question) {
+  if (!question) return;
+  const opts = (question.options || [])
+    .map(
+      (o) =>
+        `**${o.choice_key}.** ${o.emoji || ""} ${o.label}`.replace(/\s+/g, " ").trim()
+    )
+    .join("\n");
+  addMessage(
+    "assistant",
+    `**Vibe ${question.index}/${question.total}** — ${question.prompt}\n\n${opts}`
+  );
+  renderVibeOptions(question);
+}
+
+async function beginMandatoryVibe({ isNew = false } = {}) {
+  setVibeLock(true);
+  chipsEl.innerHTML = "";
+  const hello = isNew
+    ? "Welcome aboard — new guests start with a quick vibe check (takes ~20 seconds)."
+    : "One more thing — finish your vibe check to unlock the café.";
+  addMessage("assistant", hello);
+
+  try {
+    const res = await fetch("/api/vibe/start", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || data.message || "Vibe start failed");
+    if (data.phase === "complete" && data.personality) {
+      finishVibeOnboarding(data.personality);
+      return;
+    }
+    if (data.question) presentVibeQuestion(data.question);
+  } catch (err) {
+    addMessage("assistant", `Couldn’t start vibe check: ${err.message}`);
+  }
+}
+
+async function submitVibeChoice(choice) {
+  if (!currentVibeQuestion || busy) return;
+  const qid = currentVibeQuestion.id;
+  const label =
+    currentVibeQuestion.options?.find((o) => o.id === choice)?.label || choice;
+
+  busy = true;
+  sendBtn.disabled = true;
+  addMessage("user", label);
+  input.value = "";
+  autoGrow();
+  const thinking = addMessage("assistant", "Reading your vibe…", { thinking: true });
+
+  try {
+    const res = await fetch("/api/vibe/answer", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question_id: qid, choice }),
+    });
+    const data = await res.json();
+    thinking.row.remove();
+    if (!res.ok) throw new Error(data.detail || data.message || "Answer failed");
+
+    if (data.phase === "complete" && data.personality) {
+      finishVibeOnboarding(data.personality);
+      return;
+    }
+    if (data.question) presentVibeQuestion(data.question);
+  } catch (err) {
+    thinking.row.remove();
+    addMessage("assistant", `Hmm — ${err.message}. Tap an option again.`);
+  } finally {
+    busy = false;
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+function finishVibeOnboarding(personality) {
+  updatePersonality(personality);
+  setVibeLock(false);
+  currentVibeQuestion = null;
+  if (currentUser) {
+    currentUser.personality = personality;
+    currentUser.vibe_required = false;
+  }
+  renderChips();
+  addMessage(
+    "assistant",
+    `Personality locked: **${personality.label}**.\n\n${personality.blurb}\n\n${personality.drink_hint}\n\nYou’re in — ask for a drink, the room pulse, or who matches your vibe (asli guests only).`
+  );
+  openSheet();
+  refreshMatches();
+  startNotifyPolling();
+}
+
+function renderMatches(matches) {
+  if (!matchesListEl) return;
+  if (!matches?.length) {
+    matchesListEl.classList.add("empty");
+    matchesListEl.innerHTML =
+      "<p>Ask “Who matches my vibe?” — only real signed-in guests show up.</p>";
+    refreshSheetBody();
+    return;
+  }
+  matchesListEl.classList.remove("empty");
+  matchesListEl.innerHTML = matches
+    .map((m) => {
+      const handle = escapeHtml(m.handle || "Guest");
+      const vibe = escapeHtml(m.personality || "Café guest");
+      const shared = escapeHtml((m.shared || []).slice(0, 3).join(", ") || "shared vibes");
+      const sub = escapeHtml(m.matched_sub || m.sub || "");
+      const notified = m.notified;
+      const initial = escapeHtml((m.handle || "G").trim()[0] || "G").toUpperCase();
+      const avatar = m.picture
+        ? `<img src="${escapeHtml(m.picture)}" alt="" width="36" height="36" />`
+        : `<span class="match-avatar">${initial}</span>`;
+      return `
+        <div class="match-row" data-sub="${sub}">
+          ${avatar}
+          <div class="match-meta">
+            <p class="name">${handle}</p>
+            <p class="sub">${vibe} · ${shared}</p>
+          </div>
+          <button type="button" class="match-notify" data-sub="${sub}" ${
+            notified ? "disabled" : ""
+          }>${notified ? "Notified" : "Notify"}</button>
+        </div>`;
+    })
+    .join("");
+
+  matchesListEl.querySelectorAll(".match-notify").forEach((btn) => {
+    btn.addEventListener("click", () => notifyMatch(btn.dataset.sub, btn));
+  });
+  refreshSheetBody();
+}
+
+async function refreshMatches() {
+  if (vibeRequired) return;
+  try {
+    const res = await fetch("/api/matches");
+    if (!res.ok) return;
+    const data = await res.json();
+    renderMatches(data.matches || []);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function notifyMatch(matchedSub, btn) {
+  if (!matchedSub) return;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "Sending…";
+  }
+  try {
+    const res = await fetch("/api/matches/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matched_sub: matchedSub }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || data.message || "Notify failed");
+    if (btn) btn.textContent = "Notified";
+    addMessage("assistant", data.message || "Notify bhej diya — unke screen pe popup aayega.");
+    await refreshMatches();
+  } catch (err) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Notify";
+    }
+    addMessage("assistant", `Notify nahi gaya: ${err.message}`);
+  }
+}
+
+function showMatchToast(message) {
+  if (!matchToast || !matchToastMsg) return;
+  matchToastMsg.textContent = message;
+  matchToast.hidden = false;
+}
+
+function hideMatchToast() {
+  if (matchToast) matchToast.hidden = true;
+}
+
+async function pollNotifications() {
+  if (!currentUser || vibeRequired || document.hidden) return;
+  try {
+    const res = await fetch("/api/notifications");
+    if (!res.ok) return;
+    const data = await res.json();
+    const notes = data.notifications || [];
+    const fresh = notes.filter((n) => !shownNotificationIds.has(n.id));
+    if (!fresh.length) return;
+    const first = fresh[0];
+    shownNotificationIds.add(first.id);
+    showMatchToast(first.message);
+    addMessage("assistant", `**Vibe ping!** ${first.message}`);
+    await refreshMatches();
+    await fetch("/api/notifications/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: fresh.map((n) => n.id) }),
+    });
+    fresh.forEach((n) => shownNotificationIds.add(n.id));
+  } catch {
+    /* ignore */
+  }
+}
+
+function startNotifyPolling() {
+  stopNotifyPolling();
+  notifyPollTimer = setInterval(pollNotifications, 4000);
+  pollNotifications();
+}
+
+function stopNotifyPolling() {
+  if (notifyPollTimer) {
+    clearInterval(notifyPollTimer);
+    notifyPollTimer = null;
   }
 }
 
@@ -257,6 +504,24 @@ function applyToolSideEffects(events) {
     }
     if (name === "get_my_profile" && response?.personality) {
       updatePersonality(response.personality);
+    }
+    if (
+      (name === "find_connection" || name === "list_my_matches") &&
+      response?.status === "success"
+    ) {
+      const list = response.matches || (response.match ? [response.match] : []);
+      if (list.length) {
+        renderMatches(
+          list.map((m) => ({
+            ...m,
+            matched_sub: m.matched_sub || m.sub,
+          }))
+        );
+      }
+      refreshMatches();
+    }
+    if (name === "notify_match" && response?.status === "success") {
+      refreshMatches();
     }
   }
 }
@@ -297,7 +562,7 @@ function toggleAccountMenu() {
   accountBtn.setAttribute("aria-expanded", open ? "true" : "false");
 }
 
-function showApp(user, swiggy) {
+function showApp(user, swiggy, { isNew = false, forceVibe = false } = {}) {
   currentUser = user;
   gateEl.hidden = true;
   appEl.hidden = false;
@@ -316,15 +581,26 @@ function showApp(user, swiggy) {
   setSwiggyUi(swiggy);
   setSheetPeekState();
   if (user.personality) updatePersonality(user.personality);
-  if (!messagesEl.childElementCount) {
-    const vibeLine = user.personality
-      ? `You’re vibing as **${user.personality.label}** — ask for a drink tip or who matches your energy.`
-      : `First, let’s get your **café vibe** — tap *Let’s do my vibe check* (quirky movie / playlist picks).`;
-    addMessage(
-      "assistant",
-      `Hi ${user.name || "there"} — welcome to Café Concierge at Third Wave Kondapur.\n\n${vibeLine}\n\nAvatar menu → **Connect Swiggy** for delivery discovery.`
-    );
+
+  const needsVibe = forceVibe || user.vibe_required || !user.personality;
+  if (needsVibe) {
+    if (!vibeBootstrapped) {
+      vibeBootstrapped = true;
+      messagesEl.innerHTML = "";
+      beginMandatoryVibe({ isNew });
+    }
+  } else {
+    setVibeLock(false);
+    refreshMatches();
+    startNotifyPolling();
+    if (!messagesEl.childElementCount) {
+      addMessage(
+        "assistant",
+        `Hi ${user.name || "there"} — welcome back to Café Concierge at Third Wave Kondapur.\n\nYou’re vibing as **${user.personality.label}** — ask who matches your vibe (real guests only), or Notify them from the matches panel.\n\nAvatar menu → **Connect Swiggy** for delivery discovery.`
+      );
+    }
   }
+
   if (Array.isArray(user.recent_orders) && user.recent_orders[0]) {
     updateTicket({
       ...user.recent_orders[0],
@@ -343,10 +619,20 @@ async function handleGoogleCredential(response) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || "Sign-in failed");
-    showApp({ ...data.user, recent_orders: [] }, null);
+    vibeBootstrapped = false;
     const me = await fetch("/api/me").then((r) => r.json());
     if (me.authenticated) {
-      showApp({ ...me.user, recent_orders: me.recent_orders }, me.swiggy);
+      showApp(
+        { ...me.user, recent_orders: me.recent_orders },
+        me.swiggy,
+        { isNew: Boolean(data.is_new), forceVibe: Boolean(data.vibe_required) }
+      );
+    } else {
+      showApp(
+        { ...data.user, recent_orders: [] },
+        null,
+        { isNew: Boolean(data.is_new), forceVibe: Boolean(data.vibe_required) }
+      );
     }
   } catch (err) {
     showGate(err.message);
@@ -409,8 +695,12 @@ async function bootstrap() {
 
   const me = await fetch("/api/me").then((r) => r.json());
   if (me.authenticated) {
-    showApp({ ...me.user, recent_orders: me.recent_orders }, me.swiggy);
-    consumeSwiggyQuery();
+    showApp(
+      { ...me.user, recent_orders: me.recent_orders },
+      me.swiggy,
+      { forceVibe: Boolean(me.vibe_required) }
+    );
+    if (!me.vibe_required) consumeSwiggyQuery();
   } else {
     showGate();
   }
@@ -459,6 +749,34 @@ async function sendMessage(text) {
   const trimmed = text.trim();
   if (!trimmed || busy) return;
 
+  // During mandatory vibe: map free-text / A–D to the current question
+  if (vibeRequired && currentVibeQuestion) {
+    const letter = trimmed.toUpperCase();
+    if (letter.length === 1 && "ABCD".includes(letter)) {
+      const idx = letter.charCodeAt(0) - 65;
+      const opt = currentVibeQuestion.options?.[idx];
+      if (opt) {
+        await submitVibeChoice(opt.id);
+        return;
+      }
+    }
+    const byLabel = currentVibeQuestion.options?.find(
+      (o) =>
+        o.label.toLowerCase() === trimmed.toLowerCase() ||
+        o.id.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (byLabel) {
+      await submitVibeChoice(byLabel.id);
+      return;
+    }
+    addMessage(
+      "assistant",
+      "Tap one of the vibe options below (or reply with A, B, C, or D)."
+    );
+    renderVibeOptions(currentVibeQuestion);
+    return;
+  }
+
   busy = true;
   sendBtn.disabled = true;
   addMessage("user", trimmed);
@@ -476,6 +794,12 @@ async function sendMessage(text) {
     if (res.status === 401) {
       thinking.row.remove();
       showGate("Please sign in with Google again.");
+      return;
+    }
+    if (res.status === 403) {
+      thinking.row.remove();
+      vibeBootstrapped = false;
+      beginMandatoryVibe();
       return;
     }
     if (!res.ok) {
@@ -515,12 +839,27 @@ input.addEventListener("input", autoGrow);
 
 logoutBtn.addEventListener("click", async () => {
   closeAccountMenu();
+  stopNotifyPolling();
+  hideMatchToast();
   await fetch("/api/logout", { method: "POST" });
   messagesEl.innerHTML = "";
   currentUser = null;
   hasTicket = false;
+  vibeBootstrapped = false;
+  currentVibeQuestion = null;
+  shownNotificationIds = new Set();
+  setVibeLock(false);
   setSheetPeekState();
   showGate();
+});
+
+matchToastDismiss?.addEventListener("click", hideMatchToast);
+matchToast?.addEventListener("click", (e) => {
+  if (e.target === matchToast) hideMatchToast();
+});
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden && currentUser && !vibeRequired) pollNotifications();
 });
 
 bootstrap();

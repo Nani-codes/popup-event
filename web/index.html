@@ -114,6 +114,9 @@
 
       <main class="stage">
         <section class="chat-panel" aria-label="Concierge chat">
+          <div id="vibeBanner" class="vibe-banner" hidden>
+            Vibe check required — answer a few quirky picks to unlock the café.
+          </div>
           <div id="messages" class="messages" role="log" aria-live="polite"></div>
 
           <div class="composer-wrap">
@@ -149,6 +152,12 @@
               <p>Take the quirky vibe check to unlock your café personality.</p>
             </div>
           </div>
+          <div class="side-card matches-card">
+            <h2>Your matches</h2>
+            <div id="matchesList" class="matches empty">
+              <p>Ask “Who matches my vibe?” — only real signed-in guests show up.</p>
+            </div>
+          </div>
           <div class="side-card">
             <h2>Live ticket</h2>
             <div id="ticket" class="ticket empty">
@@ -174,6 +183,16 @@
         <span class="sheet-peek-grip" aria-hidden="true"></span>
         <span id="sheetPeekLabel">Ticket &amp; pulse</span>
       </button>
+
+      <div id="matchToast" class="match-toast" hidden role="alertdialog" aria-live="assertive">
+        <div class="match-toast-card">
+          <p class="match-toast-kicker">Vibe ping</p>
+          <p id="matchToastMsg" class="match-toast-msg"></p>
+          <div class="match-toast-actions">
+            <button type="button" id="matchToastDismiss" class="sheet-close">Got it</button>
+          </div>
+        </div>
+      </div>
 
       <div id="sheetScrim" class="sheet-scrim" hidden></div>
       <div

@@ -1,7 +1,7 @@
-from cafe_concierge import cafe_state
+from cafe_concierge import cafe_state, context, db
 
 
-def setup_function():
+def setup_function(tmp_path=None):
     cafe_state.reset_cafe()
 
 
@@ -37,14 +37,52 @@ def test_room_pulse_has_tips():
     assert pulse["guest_tip"]
 
 
-def test_find_match_by_interest():
-    result = cafe_state.find_match(["ai", "coffee"], guest_name="Nani")
-    assert result["status"] == "success"
-    assert result["match"]["handle"]
-    assert result["icebreaker"]
+def test_find_match_real_users_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "cafe.db")
+    db.init_db()
+    db.upsert_user(sub="a", email="a@ex.com", name="Ananya", picture=None)
+    db.update_profile(
+        "a",
+        interests=["ai", "coffee"],
+        prefs={
+            "personality": {
+                "label": "Midnight Plotter",
+                "tags": ["ai", "coffee", "filter-coffee"],
+            }
+        },
+    )
+    db.upsert_user(sub="b", email="b@ex.com", name="Rohan", picture=None)
+    db.update_profile(
+        "b",
+        interests=["ai", "hackathons"],
+        prefs={
+            "personality": {
+                "label": "Jugaad Builder",
+                "tags": ["ai", "hackathons", "espresso"],
+            }
+        },
+    )
+
+    token = context.current_user_sub.set("a")
+    try:
+        result = cafe_state.find_match(["ai", "coffee"])
+        assert result["status"] == "success"
+        assert result["source"] == "signed_in_guests"
+        assert result["match"]["handle"] == "Rohan"
+        assert result["match"]["sub"] == "b"
+        assert result["matches"]
+        listed = db.list_vibe_matches("a")
+        assert any(m["matched_sub"] == "b" for m in listed)
+        reverse = db.list_vibe_matches("b")
+        assert any(m["matched_sub"] == "a" for m in reverse)
+    finally:
+        context.current_user_sub.reset(token)
 
 
-def test_find_match_empty_suggests_solo():
+def test_find_match_empty_no_seeds(tmp_path, monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", tmp_path / "cafe.db")
+    db.init_db()
     result = cafe_state.find_match(["underwater-basket-weaving-xyz"])
     assert result["status"] == "empty"
-    assert "cozy" in result["suggestion"].lower() or "solo" in result["suggestion"].lower()
+    assert result["matches"] == []
+    assert "fake" in result["suggestion"].lower() or "live" in result["suggestion"].lower()

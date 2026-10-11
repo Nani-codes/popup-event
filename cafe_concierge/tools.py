@@ -320,9 +320,10 @@ def get_room_pulse() -> dict:
 
 
 def find_connection(interests: str = "", guest_name: str = "") -> dict:
-    """Find an opt-in signed-in guest with shared interests / vibe tags; returns icebreaker.
+    """Find real signed-in guests with shared vibe/interests (no fake seed users).
 
     If interests is empty, uses the guest's saved personality tags + interests.
+    Saves matches for both people so each can see the other in list_my_matches.
     """
     try:
         tags = [part.strip() for part in interests.split(",") if part.strip()]
@@ -340,10 +341,93 @@ def find_connection(interests: str = "", guest_name: str = "") -> dict:
         if not tags:
             return {
                 "status": "empty",
+                "matches": [],
                 "suggestion": (
-                    "Run start_vibe_check first (or share interests) so I know who to match you with."
+                    "Pehle vibe check finish karo — phir asli guests se match milenge."
                 ),
             }
         return find_match(tags, guest_name=guest_name)
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "message": f"Match failed: {exc}"}
+
+
+def list_my_matches() -> dict:
+    """List real vibe matches saved for the signed-in guest."""
+    try:
+        sub = context.current_user_sub.get()
+        if not sub:
+            return {"status": "error", "message": "Sign in with Google first."}
+        matches = db.list_vibe_matches(sub)
+        return {
+            "status": "success",
+            "count": len(matches),
+            "matches": matches,
+            "message": (
+                f"{len(matches)} live match(es)."
+                if matches
+                else "Abhi koi match nahi — 'Who matches my vibe?' try karo when more guests are signed in."
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "message": f"Could not list matches: {exc}"}
+
+
+def notify_match(matched_sub: str, note: str = "") -> dict:
+    """Ping a real matched guest — they get an in-app popup notification.
+
+    matched_sub is the Google user id (sub) from find_connection / list_my_matches.
+    """
+    try:
+        from_sub = context.current_user_sub.get()
+        if not from_sub:
+            return {"status": "error", "message": "Sign in with Google first."}
+        target = matched_sub.strip()
+        if not target or target == from_sub:
+            return {"status": "error", "message": "Pick a real matched guest to notify."}
+        other = db.get_user(target)
+        if not other:
+            return {"status": "error", "message": "That guest is not signed in / unknown."}
+        me = db.get_user(from_sub)
+        my_name = (me or {}).get("name") or "A guest"
+        my_vibe = ((me or {}).get("prefs") or {}).get("personality", {}).get("label")
+        their_name = other.get("name") or other.get("email", "Guest").split("@")[0]
+        vibe_bit = f" ({my_vibe})" if my_vibe else ""
+        extra = f" Note: {note.strip()}" if note and note.strip() else ""
+        message = (
+            f"{my_name}{vibe_bit} wants to say hi at Third Wave Kondapur — "
+            f"vibe match ping!{extra}"
+        )
+        note_row = db.create_match_notification(
+            to_sub=target, from_sub=from_sub, message=message
+        )
+        db.mark_match_notified(from_sub, target)
+        # Ensure both sides have a match row
+        shared = []
+        for m in db.list_vibe_matches(from_sub):
+            if m["matched_sub"] == target:
+                shared = m.get("shared") or []
+                break
+        db.upsert_vibe_match(
+            user_sub=from_sub,
+            matched_sub=target,
+            shared=shared,
+            score=len(shared) or 1,
+        )
+        db.upsert_vibe_match(
+            user_sub=target,
+            matched_sub=from_sub,
+            shared=shared,
+            score=len(shared) or 1,
+        )
+        db.mark_match_notified(from_sub, target)
+        return {
+            "status": "success",
+            "notification_id": note_row["id"],
+            "to": their_name,
+            "message": (
+                f"Notify bhej diya {their_name} ko — unke phone pe popup aayega "
+                "jab Café Concierge open hoga."
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "message": f"Notify failed: {exc}"}

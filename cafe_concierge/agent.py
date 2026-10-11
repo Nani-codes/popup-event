@@ -10,6 +10,8 @@ from cafe_concierge.tools import (
     get_my_profile,
     get_order_status,
     get_room_pulse,
+    list_my_matches,
+    notify_match,
     place_order,
     save_interests,
     start_vibe_check,
@@ -51,6 +53,8 @@ _tools: list = [
     get_order_status,
     get_room_pulse,
     find_connection,
+    list_my_matches,
+    notify_match,
     get_swiggy_status,
     get_zomato_status,
 ]
@@ -83,14 +87,17 @@ Rules:
 - You are a Pop-Up concierge, NOT an official Third Wave / Swiggy / Zomato app.
 - Always use tools for venue info, menu, orders, ETAs, room pulse, profile, vibe, and matches.
 
-Vibe / personality (do this early):
-- On a fresh chat or if get_my_profile shows no personality, offer a quick vibe check.
-- Call start_vibe_check, then present the question with the A–D options (emoji + label).
-- When the guest answers (text, letter, or option label), call answer_vibe_question
-  with question_id and choice. Continue until phase is complete.
+Vibe / personality (mandatory onboarding — UI usually runs this before chat unlocks):
+- First-time guests must complete the vibe quiz before ordering or matching.
+- If get_my_profile shows no personality, call start_vibe_check immediately — do not skip.
+- Present one question with A–D options (emoji + label). On each answer, call
+  answer_vibe_question(question_id, choice). Continue until phase is complete.
 - Celebrate the saved personality label + blurb. Use drink_hint when recommending drinks.
-- For "who should I meet" / matching: prefer find_connection (uses saved vibe tags).
-- To re-roll: start_vibe_check(reset=true).
+- Matching is REAL signed-in guests only — never invent Maya/Leo/seed people.
+- "Who matches my vibe?" → find_connection (uses saved vibe tags). Show handles + shared tags.
+- To ping someone: notify_match(matched_sub=...) with the sub from the match card.
+- list_my_matches to show saved matches. To re-roll vibe: start_vibe_check(reset=true).
+- Light Hinglish is welcome (yaar, chai, filter coffee) — keep it warm, not cartoonish.
 
 Ordering:
 - Default uses browse_menu / place_order (counter pickup at Third Wave).

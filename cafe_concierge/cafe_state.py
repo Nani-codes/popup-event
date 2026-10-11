@@ -30,35 +30,6 @@ _ROOM = {
     "guest_tip": "Grab a seat toward the quieter side; drinks ~6 min.",
 }
 
-# Fallback patrons only when no signed-in matches exist yet
-_PATRONS = [
-    {
-        "handle": "Maya",
-        "interests": ["ai", "coffee", "design"],
-        "available": True,
-        "bio": "Designer tinkering with agents between pour-overs at Kondapur TWC.",
-    },
-    {
-        "handle": "Leo",
-        "interests": ["music", "latte-art", "travel"],
-        "available": True,
-        "bio": "Traveler collecting café playlists — here for the Builder Pop-Up.",
-    },
-    {
-        "handle": "Priya",
-        "interests": ["startups", "filter-coffee", "books"],
-        "available": True,
-        "bio": "Founder on a filter-coffee break with a paperback.",
-    },
-    {
-        "handle": "Arjun",
-        "interests": ["ai", "hackathons", "cold-coffee"],
-        "available": True,
-        "bio": "Hackathon regular — usually by the power outlets with a cold coffee.",
-    },
-]
-
-
 def reset_cafe() -> None:
     global _ORDERS, _ORDER_SEQ
     _ORDERS = {}
@@ -185,14 +156,17 @@ def get_room_pulse() -> dict:
 
 
 def find_match(interests: list[str], guest_name: str = "") -> dict:
+    """Match only against real signed-in guests (no seed/fake profiles)."""
+    del guest_name  # kept for tool signature compatibility
     wanted = {i.strip().lower() for i in interests if i and i.strip()}
     if not wanted:
         return {
             "status": "empty",
             "suggestion": (
-                "Share an interest (AI, coffee, filter-coffee, music…) "
-                "or enjoy a cozy solo corner near the quieter tables."
+                "Pehle vibe check finish karo, ya interests share karo — "
+                "phir asli guests se match dikhega. Meanwhile, cozy solo corner le lo."
             ),
+            "matches": [],
         }
 
     exclude = context.current_user_sub.get() or ""
@@ -201,67 +175,74 @@ def find_match(interests: list[str], guest_name: str = "") -> dict:
     except Exception:  # noqa: BLE001
         live_matches = []
 
-    if live_matches:
-        top = live_matches[0]
-        shared = ", ".join(top.get("shared") or [])
+    if not live_matches:
+        return {
+            "status": "empty",
+            "suggestion": (
+                "Abhi koi live match nahi mila — kisi aur guest ko Sign in + vibe check "
+                "karne ko bolo, ya corner table claim karo. Seed / fake profiles band."
+            ),
+            "matches": [],
+            "source": "signed_in_guests",
+        }
+
+    me = db.get_user(exclude) if exclude else None
+    my_name = (me or {}).get("name") or "A guest"
+    my_vibe = ((me or {}).get("prefs") or {}).get("personality", {}).get("label")
+
+    cards: list[dict] = []
+    for top in live_matches:
+        shared_list = list(top.get("shared") or [])
+        shared = ", ".join(shared_list)
         handle = top.get("name") or top.get("email", "Guest").split("@")[0]
         vibe = top.get("personality_label")
-        vibe_bit = f" ({vibe})" if vibe else ""
-        return {
-            "status": "success",
-            "source": "signed_in_guests",
-            "venue": VENUE["name"],
-            "match": {
+        score = len(shared_list)
+        matched_sub = top.get("sub")
+        if exclude and matched_sub:
+            db.upsert_vibe_match(
+                user_sub=exclude,
+                matched_sub=matched_sub,
+                shared=shared_list,
+                score=score,
+            )
+            # Reverse so they can see you too
+            their_wanted = {t.lower() for t in (top.get("interests") or [])}
+            their_pers = (top.get("prefs") or {}).get("personality") or {}
+            their_wanted |= {t.lower() for t in (their_pers.get("tags") or [])}
+            reverse_shared = sorted(wanted & their_wanted) or shared_list
+            db.upsert_vibe_match(
+                user_sub=matched_sub,
+                matched_sub=exclude,
+                shared=reverse_shared,
+                score=len(reverse_shared),
+            )
+
+        cards.append(
+            {
+                "sub": matched_sub,
                 "handle": handle,
                 "email": top.get("email"),
                 "interests": top.get("interests"),
                 "personality": vibe,
-                "shared": top.get("shared"),
+                "shared": shared_list,
                 "picture": top.get("picture"),
-            },
-            "icebreaker": (
-                f"Hey {handle}{vibe_bit} — you both light up around {shared}. "
-                f"They're signed in at the Pop-Up — say hi and ask what brought them today."
-            ),
-        }
+                "score": score,
+            }
+        )
 
-    # Fallback seed patrons so the demo still works with few signups
-    best = None
-    best_score = 0
-    for patron in _PATRONS:
-        if not patron["available"]:
-            continue
-        if guest_name and patron["handle"].lower() == guest_name.lower():
-            continue
-        overlap = wanted & {t.lower() for t in patron["interests"]}
-        score = len(overlap)
-        if score > best_score:
-            best_score = score
-            best = (patron, overlap)
-
-    if not best or best_score == 0:
-        return {
-            "status": "empty",
-            "suggestion": (
-                "No signed-in matches yet — invite someone to Sign in with Google "
-                "and add interests, or claim a cozy solo corner."
-            ),
-        }
-
-    patron, overlap = best
-    shared = ", ".join(sorted(overlap))
+    top = cards[0]
+    vibe_bit = f" ({top['personality']})" if top.get("personality") else ""
+    shared = ", ".join(top.get("shared") or [])
     return {
         "status": "success",
-        "source": "seed_fallback",
+        "source": "signed_in_guests",
         "venue": VENUE["name"],
-        "match": {
-            "handle": patron["handle"],
-            "interests": patron["interests"],
-            "bio": patron["bio"],
-            "shared": list(overlap),
-        },
+        "match": top,
+        "matches": cards,
         "icebreaker": (
-            f"Hey {patron['handle']} — you both light up around {shared}. "
-            f"(Seed profile — more live matches appear as guests sign in.)"
+            f"{top['handle']}{vibe_bit} se vibe match — common ground: {shared}. "
+            f"Notify bhejo agar unhe batana hai ke {my_name}"
+            f"{f' ({my_vibe})' if my_vibe else ''} ne ping kiya. "
+            "Say hi IRL at Third Wave — asli guest hai, koi fake profile nahi."
         ),
     }
