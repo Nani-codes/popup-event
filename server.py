@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import os
 import secrets
@@ -29,11 +31,31 @@ load_dotenv(ROOT / ".env.local")
 
 
 def _materialize_gcp_credentials_from_env() -> None:
-    """Coolify: set GOOGLE_APPLICATION_CREDENTIALS_JSON to the SA JSON blob."""
+    """Coolify-safe: base64 of the SA JSON (multiline JSON breaks Coolify .env).
+
+    Set GOOGLE_APPLICATION_CREDENTIALS_B64 to:
+      base64 -w0 purplegrid-vertexai.json   # Linux
+      base64 -i purplegrid-vertexai.json | tr -d '\\n'  # macOS
+    """
+    b64 = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_B64", "").strip()
     raw = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON", "").strip()
-    if not raw:
+
+    if b64:
+        # Strip whitespace / accidental wrapping quotes
+        if (b64.startswith("'") and b64.endswith("'")) or (
+            b64.startswith('"') and b64.endswith('"')
+        ):
+            b64 = b64[1:-1].strip()
+        b64 = "".join(b64.split())
+        try:
+            raw = base64.b64decode(b64, validate=False).decode("utf-8")
+        except (binascii.Error, UnicodeDecodeError) as exc:
+            raise RuntimeError(
+                "GOOGLE_APPLICATION_CREDENTIALS_B64 is not valid base64"
+            ) from exc
+    elif not raw:
         return
-    # Allow accidental wrapping quotes from paste into Coolify
+
     if (raw.startswith("'") and raw.endswith("'")) or (
         raw.startswith('"') and raw.endswith('"')
     ):
@@ -42,10 +64,11 @@ def _materialize_gcp_credentials_from_env() -> None:
         payload = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            "GOOGLE_APPLICATION_CREDENTIALS_JSON is not valid JSON"
+            "Decoded credentials are not valid JSON "
+            "(use GOOGLE_APPLICATION_CREDENTIALS_B64 for Coolify)"
         ) from exc
     if not isinstance(payload, dict):
-        raise RuntimeError("GOOGLE_APPLICATION_CREDENTIALS_JSON must be a JSON object")
+        raise RuntimeError("Service account credentials must be a JSON object")
 
     fd, path = tempfile.mkstemp(prefix="gcp-sa-", suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
