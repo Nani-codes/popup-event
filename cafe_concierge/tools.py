@@ -13,6 +13,7 @@ from cafe_concierge.cafe_state import (
 from cafe_concierge.menu import filter_menu
 from cafe_concierge.vibe import (
     QUESTIONS,
+    format_question_message,
     next_question,
     option_by_id,
     question_by_id,
@@ -118,10 +119,7 @@ def start_vibe_check(reset: bool = False) -> dict:
             "status": "success",
             "phase": "question",
             "question": q,
-            "message": (
-                f"Vibe check {q['index']}/{q['total']}: {q['prompt']} "
-                "Show the options and wait for their pick."
-            ),
+            "message": format_question_message(q),
         }
     except Exception as exc:  # noqa: BLE001
         return {"status": "error", "message": f"Vibe check failed: {exc}"}
@@ -163,10 +161,16 @@ def answer_vibe_question(question_id: str, choice: str) -> dict:
                     option_id = o["id"]
                     break
         if not opt:
+            retry_q = next_question(_vibe_answers(user))
+            msg = f"Invalid choice '{choice}'. Use an option id or A/B/C/D."
+            if retry_q:
+                msg = format_question_message(
+                    retry_q, preface=msg + " Pick again:"
+                )
             return {
                 "status": "error",
-                "message": f"Invalid choice '{choice}'. Use an option id or A/B/C/D.",
-                "question": next_question(_vibe_answers(user)),
+                "message": msg,
+                "question": retry_q,
             }
 
         answers = _vibe_answers(user)
@@ -187,9 +191,8 @@ def answer_vibe_question(question_id: str, choice: str) -> dict:
             "phase": "question",
             "recorded": {"question_id": q["id"], "choice": option_id, "label": opt["label"]},
             "question": nxt,
-            "message": (
-                f"Nice — {opt['label']}. Next ({nxt['index']}/{nxt['total']}): "
-                f"{nxt['prompt']}"
+            "message": format_question_message(
+                nxt, preface=f"Nice — {opt['label']}."
             ),
         }
     except Exception as exc:  # noqa: BLE001

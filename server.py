@@ -534,13 +534,6 @@ def _run_vibe_gate(user: dict[str, Any], text: str) -> dict[str, Any]:
                 }
 
         started = cafe_tools.start_vibe_check()
-        q = started.get("question") or {}
-        prompt = q.get("prompt") or "Finish your vibe check to unlock the café."
-        opts = q.get("options") or []
-        opt_lines = "\n".join(
-            f"**{o.get('choice_key', '')}.** {o.get('emoji', '')} {o.get('label', '')}".strip()
-            for o in opts
-        )
         if started.get("phase") == "complete" and started.get("personality"):
             return {
                 "reply": started.get("message")
@@ -551,12 +544,16 @@ def _run_vibe_gate(user: dict[str, Any], text: str) -> dict[str, Any]:
                 "session_id": None,
                 "user": _public_user(db.get_user(sub)),
             }
-        reply = (
-            f"Pehle vibe check complete karo — then café unlocks.\n\n"
-            f"**Vibe {q.get('index', '?')}/{q.get('total', '?')}** — {prompt}"
+        from cafe_concierge.vibe import format_question_message
+
+        q = started.get("question") or {}
+        reply = format_question_message(
+            q,
+            preface="Pehle vibe check complete karo — then café unlocks.",
+        ) if q else (
+            started.get("message")
+            or "Pehle vibe check complete karo — then café unlocks."
         )
-        if opt_lines:
-            reply += f"\n\n{opt_lines}"
         return {
             "reply": reply,
             "vibe_required": True,

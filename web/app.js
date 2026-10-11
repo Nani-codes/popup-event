@@ -364,7 +364,15 @@ async function submitVibeChoice(choice) {
       finishVibeOnboarding(data.personality);
       return;
     }
-    if (data.question) presentVibeQuestion(data.question);
+    if (data.question) {
+      // Prefer full server message (always includes A–D); still bind chips
+      if (data.message) {
+        addMessage("assistant", data.message);
+        renderVibeOptions(data.question);
+      } else {
+        presentVibeQuestion(data.question);
+      }
+    }
   } catch (err) {
     thinking.row.remove();
     addMessage("assistant", `Hmm — ${err.message}. Tap an option again.`);
@@ -843,7 +851,9 @@ async function sendMessage(text) {
       setVibeLock(true);
       if (currentUser) currentUser.vibe_required = true;
       addMessage("assistant", data.reply || "Vibe check pehle.");
-      applyVibePayload(data.vibe);
+      // Bind chips only — reply already includes A–D options
+      if (data.vibe?.question) renderVibeOptions(data.vibe.question);
+      else applyVibePayload(data.vibe);
       return;
     }
     if (data.vibe?.phase === "complete" && data.vibe.personality) {

@@ -268,6 +268,29 @@ def public_question(question: dict[str, Any], *, index: int, total: int) -> dict
     }
 
 
+def format_question_message(
+    question: dict[str, Any], *, preface: str = ""
+) -> str:
+    """Render a vibe question with A–D options always visible in the reply text."""
+    opts = question.get("options") or []
+    lines = [
+        (
+            f"**{o.get('choice_key', chr(65 + i))}.** "
+            f"{o.get('emoji', '')} {o.get('label', '')}"
+        ).replace("  ", " ").strip()
+        for i, o in enumerate(opts)
+    ]
+    body = (
+        f"**Vibe {question.get('index', '?')}/{question.get('total', '?')}** — "
+        f"{question.get('prompt', '')}"
+    )
+    if lines:
+        body += "\n\n" + "\n".join(lines)
+    if preface:
+        return f"{preface.rstrip()}\n\n{body}"
+    return body
+
+
 def score_answers(answers: dict[str, str]) -> dict[str, Any]:
     weights: dict[str, int] = {}
     tags: list[str] = []
