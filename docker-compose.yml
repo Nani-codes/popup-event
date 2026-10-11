@@ -1,0 +1,57 @@
+# Café Concierge — Coolify Docker Compose Application
+#
+# Coolify: New Resource → Git repo → Build pack: Docker Compose
+#   Base Directory: /
+#   Docker Compose Location: /docker-compose.yml
+# Domains: point at service `app`, internal port 5173
+#   (e.g. https://cafe.example.com:5173 — public traffic stays on 443)
+#
+# Required env (Coolify → Environment Variables, mark as secret):
+#   GOOGLE_CLIENT_ID
+#   GOOGLE_APPLICATION_CREDENTIALS_JSON  ← paste full Vertex SA JSON
+# Optional: SESSION_SECRET, SWIGGY_*, ZOMATO_*, GOOGLE_CLOUD_*
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "5173"
+    environment:
+      # Coolify magic: generates domain + Traefik route → container :5173
+      SERVICE_URL_APP_5173: /
+      PORT: "5173"
+
+      GOOGLE_GENAI_USE_VERTEXAI: ${GOOGLE_GENAI_USE_VERTEXAI:-TRUE}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-purplegrid}
+      GOOGLE_CLOUD_LOCATION: ${GOOGLE_CLOUD_LOCATION:-us-central1}
+
+      # Paste the full service-account JSON here (Coolify secret). No file mount needed.
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: ${GOOGLE_APPLICATION_CREDENTIALS_JSON:?}
+
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?}
+      # Coolify generates SERVICE_PASSWORD_64_SESSION unless you override SESSION_SECRET
+      SESSION_SECRET: ${SESSION_SECRET:-${SERVICE_PASSWORD_64_SESSION}}
+
+      # Defaults to the Coolify-generated public URL + Swiggy callback path
+      SWIGGY_MCP_ENABLED: ${SWIGGY_MCP_ENABLED:-1}
+      SWIGGY_MCP_URL: ${SWIGGY_MCP_URL:-https://mcp.swiggy.com/food}
+      SWIGGY_CLIENT_ID: ${SWIGGY_CLIENT_ID:-swiggy-mcp}
+      SWIGGY_REDIRECT_URI: ${SWIGGY_REDIRECT_URI:-${SERVICE_URL_APP_5173}/auth/swiggy/callback}
+
+      ZOMATO_MCP_ENABLED: ${ZOMATO_MCP_ENABLED:-0}
+      ZOMATO_MCP_URL: ${ZOMATO_MCP_URL:-https://mcp-server.zomato.com/mcp}
+      ZOMATO_MCP_AUTH_HEADER: ${ZOMATO_MCP_AUTH_HEADER:-}
+    volumes:
+      - cafe-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5173/api/config"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 25s
+
+volumes:
+  cafe-data:

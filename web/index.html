@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#F8F9FA" />
+    <title>Café Concierge · Builder Pop-Up</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,400;8..144,500;8..144,600;8..144,700&family=Roboto:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="mesh" aria-hidden="true"></div>
+
+    <div id="gate" class="gate" hidden>
+      <div class="gate-card">
+        <div class="spark large" aria-hidden="true">
+          <svg viewBox="0 0 48 48" width="48" height="48">
+            <defs>
+              <linearGradient id="sparkGradGate" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#4285F4" />
+                <stop offset="35%" stop-color="#9B72CB" />
+                <stop offset="70%" stop-color="#D96570" />
+                <stop offset="100%" stop-color="#F4B400" />
+              </linearGradient>
+            </defs>
+            <path
+              fill="url(#sparkGradGate)"
+              d="M24 4c.6 8.2 7.8 15.4 16 16-8.2.6-15.4 7.8-16 16-.6-8.2-7.8-15.4-16-16 8.2-.6 15.4-7.8 16-16z"
+            />
+          </svg>
+        </div>
+        <h1>Café Concierge</h1>
+        <p class="gate-lead">
+          Sign in with Google to order, save preferences, and meet people at the
+          Builder Pop-Up — Third Wave Kondapur.
+        </p>
+        <div id="googleBtn" class="google-btn"></div>
+        <p id="gateError" class="gate-error" hidden></p>
+        <p class="fineprint">
+          Live guest accounts · orders saved to your profile · not an official Google or Third Wave product
+        </p>
+      </div>
+    </div>
+
+    <div id="app" class="app" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <div class="spark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" width="36" height="36">
+              <defs>
+                <linearGradient id="sparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#4285F4" />
+                  <stop offset="35%" stop-color="#9B72CB" />
+                  <stop offset="70%" stop-color="#D96570" />
+                  <stop offset="100%" stop-color="#F4B400" />
+                </linearGradient>
+              </defs>
+              <path
+                fill="url(#sparkGrad)"
+                d="M24 4c.6 8.2 7.8 15.4 16 16-8.2.6-15.4 7.8-16 16-.6-8.2-7.8-15.4-16-16 8.2-.6 15.4-7.8 16-16z"
+              />
+            </svg>
+          </div>
+          <div class="brand-text">
+            <p class="product">Café Concierge</p>
+            <p class="sub">Third Wave · Kondapur</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <div class="venue" title="Live venue">
+            <span class="dot"></span>
+            <span class="venue-label">Live</span>
+          </div>
+          <div id="userChip" class="user-chip" hidden>
+            <button
+              type="button"
+              id="accountBtn"
+              class="account-btn"
+              aria-haspopup="menu"
+              aria-expanded="false"
+              aria-controls="accountMenu"
+            >
+              <img
+                id="userPic"
+                alt=""
+                width="32"
+                height="32"
+                hidden
+                src="data:image/gif;base64,R0lGODlhAQABAAAAACwAAAAAAQABAAA="
+              />
+              <span id="userInitial" class="user-initial" hidden>G</span>
+              <span id="userName" class="user-name"></span>
+            </button>
+            <div id="accountMenu" class="account-menu" role="menu" hidden>
+              <button type="button" id="swiggyBtn" class="menu-item swiggy-btn" role="menuitem">
+                Connect Swiggy
+              </button>
+              <button type="button" id="logout" class="menu-item" role="menuitem">
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="stage">
+        <section class="chat-panel" aria-label="Concierge chat">
+          <div id="messages" class="messages" role="log" aria-live="polite"></div>
+
+          <div class="composer-wrap">
+            <div class="chips" id="chips" aria-label="Suggested prompts"></div>
+            <form id="composer" class="composer">
+              <label class="sr-only" for="input">Message</label>
+              <textarea
+                id="input"
+                rows="1"
+                placeholder="Craving, room pulse, or who to meet…"
+                autocomplete="off"
+                enterkeyhint="send"
+              ></textarea>
+              <button type="submit" id="send" class="send" aria-label="Send">
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                  <path
+                    fill="currentColor"
+                    d="M3.4 20.6 21 12 3.4 3.4l-.1 7.1L15 12 3.3 13.5z"
+                  />
+                </svg>
+              </button>
+            </form>
+            <p class="fineprint">
+              Demo tickets · confirm real pricing at the counter
+            </p>
+          </div>
+        </section>
+
+        <aside class="side" id="sidePanel" aria-label="Vibe, ticket, and room pulse">
+          <div class="side-card vibe-card">
+            <h2>Your vibe</h2>
+            <div id="vibeCard" class="vibe empty">
+              <p>Take the quirky vibe check to unlock your café personality.</p>
+            </div>
+          </div>
+          <div class="side-card">
+            <h2>Live ticket</h2>
+            <div id="ticket" class="ticket empty">
+              <p class="ticket-empty">Your order will appear here after you confirm a drink.</p>
+            </div>
+          </div>
+          <div class="side-card pulse-card">
+            <h2>Room pulse</h2>
+            <div id="pulse" class="pulse empty">
+              <p>Ask “How’s the room?” to refresh.</p>
+            </div>
+          </div>
+        </aside>
+      </main>
+
+      <button
+        type="button"
+        id="sheetPeek"
+        class="sheet-peek"
+        aria-controls="sideSheet"
+        aria-expanded="false"
+      >
+        <span class="sheet-peek-grip" aria-hidden="true"></span>
+        <span id="sheetPeekLabel">Ticket &amp; pulse</span>
+      </button>
+
+      <div id="sheetScrim" class="sheet-scrim" hidden></div>
+      <div
+        id="sideSheet"
+        class="side-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sheetTitle"
+        hidden
+      >
+        <div class="sheet-handle" aria-hidden="true"></div>
+        <div class="sheet-head">
+          <h2 id="sheetTitle">Ticket &amp; pulse</h2>
+          <button type="button" id="sheetClose" class="sheet-close" aria-label="Close">
+            Close
+          </button>
+        </div>
+        <div id="sheetBody" class="sheet-body"></div>
+      </div>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
